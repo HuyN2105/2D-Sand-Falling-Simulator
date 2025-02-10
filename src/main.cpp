@@ -1,13 +1,14 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <queue>
 #include <SDL.h>
 
 #define HuyN_ int main
 #define iWindowWidth 1280
 #define iWindowHeight 720
 
-using std::cout, std::cerr, std::endl, std::vector, std::floor, std::ceil, std::abs;
+using std::cout, std::cerr, std::endl, std::vector, std::floor, std::ceil, std::abs, std::queue, std::rand, std::srand;
 
 class SDLException final : public std::runtime_error {
 public:
@@ -16,16 +17,40 @@ public:
     }
 };
 
-int iSandSize = 5;
-int iSandSummonSize = 20;
+
+// Global Variables Area
+
+
+int iSandSize = 15;
+int iSandSummonSize = 3;
 int iSandSummonX = 0, iSandSummonY = 0;
 
-int iUpdateSpeed = 50; // 50ms
+Uint64 iLastUpdate = 0; // Last Update Time
+Uint64 iUpdateInterval = 100; // Frame update interval
+
+struct Pos {
+    int x,
+        y;
+};
 
 struct {
     int w = iWindowWidth;
     int h = iWindowHeight;
 } windowSize;
+
+vector<vector<int>> vSandMap(floor(iWindowWidth / iSandSize), vector<int>(floor(iWindowHeight / iSandSize), 0));
+
+/*
+Sand Identification
+    #id     #Name           #Reason
+    0       Empty           Empty box
+    1       Falling-Sand    Sand is in midair
+    2       Sand-Summoner   Following cursor
+*/
+
+
+// Functions Area
+
 
 static int resizingEventWatcher(void* data, const SDL_Event* event) {
     if (event->type == SDL_WINDOWEVENT &&
@@ -33,50 +58,121 @@ static int resizingEventWatcher(void* data, const SDL_Event* event) {
             if (const SDL_Window* win = SDL_GetWindowFromID(event->window.windowID); win == static_cast<SDL_Window *>(data)) {
                 windowSize.w = event->window.data1;
                 windowSize.h = event->window.data2;
+                const int iNewWidth = floor(windowSize.w / iSandSize);
+                const int iNewHeight = floor(windowSize.h / iSandSize);
+
+                vSandMap.resize(iNewWidth);
+                for (auto& row : vSandMap) {
+                    row.resize(iNewHeight, 0);
+                }
             }
         }
     return 0;
 }
 
-void drawSandSummoner(SDL_Renderer* renderer) {
-    SDL_SetRenderDrawColor(renderer, 0x2C, 0x2C, 0x2C, 0xFF);
-    const SDL_Rect sandSummonRect{iSandSummonX - iSandSummonSize / 2, iSandSummonY - iSandSummonSize / 2, iSandSummonSize, iSandSummonSize};
-    SDL_RenderFillRect(renderer, &sandSummonRect);
-}
-
-void drawSand(SDL_Renderer* renderer, const int x, const int y, const int oldX, const int oldY) {
-    // Clear Old Sand At Pos (oldX, oldY)
-    SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
-    const SDL_Rect sandClearRect{oldX, oldY, iSandSize, iSandSize};
-    SDL_RenderFillRect(renderer, &sandClearRect);
-
-    // Draw Sand At Pos (x, y)
-    SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-    const SDL_Rect sandSummonRect{x, y, iSandSize, iSandSize};
-    SDL_RenderFillRect(renderer, &sandSummonRect);
-    SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0x00, 0xFF);
-    SDL_RenderDrawRect(renderer, &sandSummonRect);
-}
-
-
-void gridDrawer(SDL_Renderer* renderer) {
-    SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
-    for (int x = 0; x < windowSize.w; x += iSandSize) {
-        SDL_RenderDrawLine(renderer, x, 0, x, windowSize.h);
+void setSandSummoner(SDL_Renderer* renderer, queue<Pos> *qSummonerPosRemove) {
+    // Old summoner Removal
+    while (!qSummonerPosRemove->empty()) {
+        const auto [x, y] = qSummonerPosRemove->front();
+        qSummonerPosRemove->pop();
+        vSandMap[x][y] = vSandMap[x][y] != 1 ? 0 : vSandMap[x][y];
     }
-    for (int y = 0; y < windowSize.h; y += iSandSize) {
-        SDL_RenderDrawLine(renderer, 0, y, windowSize.w, y);
+
+    const int iKeyBoxX = floor(iSandSummonX / iSandSize),
+              iKeyBoxY = floor((windowSize.h - iSandSummonY) / iSandSize);
+
+    for (int i = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); i <= floor(iSandSummonSize / 2); i++) {
+        for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
+            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j] != 1) {
+                vSandMap[iKeyBoxX + i][iKeyBoxY + j] = 2;
+                qSummonerPosRemove->push({iKeyBoxX + i, iKeyBoxY + j});
+            }
+        }
+    }
+}
+
+void drawSand(SDL_Renderer* renderer) {
+
+    const int iKeyBoxX = floor(iSandSummonX / iSandSize),
+              iKeyBoxY = floor((windowSize.h - iSandSummonY) / iSandSize);
+
+    for (int i = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); i <= floor(iSandSummonSize / 2); i++) {
+        for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
+            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j] != 1) {
+                vSandMap[iKeyBoxX + i][iKeyBoxY + j] = 1;
+            }
+        }
+    }
+}
+
+
+void gridDrawer(SDL_Renderer* renderer, const vector<vector<int>>& vSandMap) {
+    for (int i = 0; i < vSandMap.size(); i++) {
+        for (int j = 0; j < vSandMap[i].size(); j++) {
+            const SDL_Rect gridRect{i * iSandSize, windowSize.h - (j + 1) * iSandSize, iSandSize, iSandSize};
+            if (vSandMap[i][j] == 1) {
+                SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+                SDL_RenderFillRect(renderer, &gridRect);
+                SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0x00, 0xFF);
+                SDL_RenderDrawRect(renderer, &gridRect);
+            }
+            else if (vSandMap[i][j] == 2) {
+                SDL_SetRenderDrawColor(renderer, 0x8C, 0x8C, 0x8C, 0xFF);
+                SDL_RenderFillRect(renderer, &gridRect);
+                SDL_SetRenderDrawColor(renderer, 0x7C, 0x7C, 0x7C, 0xFF);
+                SDL_RenderDrawRect(renderer, &gridRect);
+            }
+            else {
+                SDL_SetRenderDrawColor(renderer, 0x3C, 0x3C, 0x3C, 0xFF);
+                SDL_RenderDrawRect(renderer, &gridRect);
+            }
+        }
     }
 }
 
 
 void simulateSandFalling(SDL_Renderer* renderer) {
-
+    Uint64 iCurrentTime = SDL_GetTicks();
+    if (iCurrentTime - iLastUpdate > iUpdateInterval) {
+        iLastUpdate = iCurrentTime;
+        cerr << "Update " << iCurrentTime << endl;
+        for (int i = 0; i < vSandMap[0].size(); i++) {
+            for (int j = 0; j < vSandMap.size(); j++) {
+                if (vSandMap[j][i] == 1) {
+                    if (i - 1 >= 0) {
+                        if (vSandMap[j][i - 1] != 1){
+                            vSandMap[j][i] = 0;
+                            vSandMap[j][i - 1] = 1;
+                        }
+                        else {
+                            bool isLeftAvailable = false;
+                            if (vSandMap[j - 1][i - 1] != 1) {
+                                isLeftAvailable = true;
+                            }
+                            if (vSandMap[j + 1][i - 1] != 1) {
+                                if (isLeftAvailable && rand() % 2 == 1) {
+                                    vSandMap[j][i] = 0;
+                                    vSandMap[j - 1][i - 1] = 1;
+                                } else {
+                                    vSandMap[j][i] = 0;
+                                    vSandMap[j + 1][i - 1] = 1;
+                                }
+                            } else if (isLeftAvailable) {
+                                vSandMap[j][i] = 0;
+                                vSandMap[j - 1][i - 1] = 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    gridDrawer(renderer, vSandMap);
 }
 
 HuyN_(int argc, char* argv[]) {
 
-    vector<vector<int>> sandMap(floor(iWindowWidth / iSandSize), vector<int>(floor(iWindowHeight / iSandSize), 0));
+    queue<Pos> qSummonerPosRemove = {};
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         throw SDLException("Failed to initialize SDL");
@@ -111,26 +207,50 @@ HuyN_(int argc, char* argv[]) {
 
         while (SDL_PollEvent(&event)) {
             switch (event.type){
-                case SDL_QUIT:
-                    isRunning = false;
+                case SDL_MOUSEBUTTONDOWN:
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        drawSand(renderer);
+                    } else {
+                        // TODO: Handle Right Click To Be Able To Remove Sand
+                    }
                     break;
                 case SDL_MOUSEWHEEL:
                     if (event.wheel.y > 0) {
-                        iSandSummonSize += iSandSummonSize < 100 ? 10 : 0;
+                        iSandSummonSize += iSandSummonSize < 10 ? 2 : 0;
                     } else if (event.wheel.y < 0) {
-                        iSandSummonSize -= iSandSummonSize > 10 ? 10 : 0;
+                        iSandSummonSize -= iSandSummonSize > 1 ? 2 : 0;
                     }
+                    cout << "Sand Summoner Size: " << iSandSummonSize << endl;
+                    setSandSummoner(renderer, &qSummonerPosRemove);
                     break;
                 case SDL_MOUSEMOTION:
                     iSandSummonX = event.motion.x;
                     iSandSummonY = event.motion.y;
+                    setSandSummoner(renderer, &qSummonerPosRemove);
+                    break;
+                case SDL_KEYDOWN:
+                    switch (event.key.keysym.sym) {
+                        case SDLK_KP_PLUS:
+                            iUpdateInterval -= iUpdateInterval > 25 ? 25 : iUpdateInterval > 5 ? 5 : 0;
+                            cout << "Sand Falling Speed: " << iUpdateInterval << endl;
+                            break;
+                        case SDLK_KP_MINUS:
+                            iUpdateInterval += 25;
+                            cout << "Sand Falling Speed: " << iUpdateInterval << endl;
+                            break;
+                        default:
+                            break;
+                    }
+                    break;
+                case SDL_QUIT:
+                    isRunning = false;
                     break;
                 default:
                     break;
             }
         }
 
-        drawSandSummoner(renderer);
+        simulateSandFalling(renderer);
 
         SDL_RenderPresent(renderer);
     }

@@ -14,4 +14,3 @@ This project was initiated as a leisure pursuit and curiosity with the goal of e
 ## Demo
 
 #TODO: Insert gif or link to demo
-
