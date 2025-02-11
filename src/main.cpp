@@ -90,7 +90,7 @@ void setSandSummoner(SDL_Renderer* renderer, queue<Pos> *qSummonerPosRemove) {
 
     for (int i = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); i <= floor(iSandSummonSize / 2); i++) {
         for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
-            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j] != 1) {
+            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && (vSandMap[iKeyBoxX + i][iKeyBoxY + j] != 1 || isHoldingRightMouse)) {
                 vSandMap[iKeyBoxX + i][iKeyBoxY + j] = 2;
                 qSummonerPosRemove->push({iKeyBoxX + i, iKeyBoxY + j});
             }
@@ -107,6 +107,19 @@ void drawSand(SDL_Renderer* renderer) {
         for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
             if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j] != 1) {
                 vSandMap[iKeyBoxX + i][iKeyBoxY + j] = 1;
+            }
+        }
+    }
+}
+void eraseSand(SDL_Renderer* renderer) {
+
+    const int iKeyBoxX = floor(iSandSummonX / iSandSize),
+              iKeyBoxY = floor((windowSize.h - iSandSummonY) / iSandSize);
+
+    for (int i = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); i <= floor(iSandSummonSize / 2); i++) {
+        for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
+            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j] == 1) {
+                vSandMap[iKeyBoxX + i][iKeyBoxY + j] = 0;
             }
         }
     }
@@ -139,7 +152,7 @@ void gridDrawer(SDL_Renderer* renderer, const vector<vector<int>>& vSandMap) {
 
 
 void simulateSandFalling(SDL_Renderer* renderer) {
-    if (const Uint64 iCurrentTime = SDL_GetTicks(); iCurrentTime - iLastUpdate > iUpdateInterval) {
+    if (const Uint64 iCurrentTime = SDL_GetTicks(); iCurrentTime - iLastUpdate > iUpdateInterval && !isHoldingRightMouse) {
         iLastUpdate = iCurrentTime;
         for (int i = 0; i < vSandMap[0].size(); i++) {
             for (int j = 0; j < vSandMap.size(); j++) {
@@ -247,6 +260,7 @@ HuyN_(int argc, char* argv[]) {
                         drawSand(renderer);
                         isHoldingLeftMouse = true;
                     } else {
+                        eraseSand(renderer);
                         isHoldingRightMouse = true;
                     }
                     break;
@@ -259,7 +273,7 @@ HuyN_(int argc, char* argv[]) {
                     break;
                 case SDL_MOUSEWHEEL:
                     if (event.wheel.y > 0) {
-                        iSandSummonSize += iSandSummonSize < 10 ? 2 : 0;
+                        iSandSummonSize += iSandSummonSize < 19 ? 2 : 0;
                     } else if (event.wheel.y < 0) {
                         iSandSummonSize -= iSandSummonSize > 1 ? 2 : 0;
                     }
@@ -274,11 +288,11 @@ HuyN_(int argc, char* argv[]) {
                 case SDL_KEYDOWN:
                     switch (event.key.keysym.sym) {
                         case SDLK_KP_PLUS:
-                            iUpdateInterval -= iUpdateInterval > 25 ? 25 : iUpdateInterval > 5 ? 5 : 0;
+                            iUpdateInterval -= iUpdateInterval > 15 ? 15 : iUpdateInterval > 5 ? 5 : 0;
                             cout << "Sand Falling Speed: " << iUpdateInterval << endl;
                             break;
                         case SDLK_KP_MINUS:
-                            iUpdateInterval += 25;
+                            iUpdateInterval += 15;
                             cout << "Sand Falling Speed: " << iUpdateInterval << endl;
                             break;
                         default:
