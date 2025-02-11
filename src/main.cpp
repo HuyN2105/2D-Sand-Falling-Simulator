@@ -2,13 +2,15 @@
 #include <vector>
 #include <cmath>
 #include <queue>
+#include <random>
 #include <SDL.h>
+#include <SDL_ttf.h>
 
 #define HuyN_ int main
 #define iWindowWidth 1280
 #define iWindowHeight 720
 
-using std::cout, std::cerr, std::endl, std::vector, std::floor, std::ceil, std::abs, std::queue, std::rand, std::srand;
+using std::string, std::cout, std::cerr, std::endl, std::vector, std::floor, std::ceil, std::abs, std::queue, std::rand, std::to_string;
 
 class SDLException final : public std::runtime_error {
 public:
@@ -17,16 +19,21 @@ public:
     }
 };
 
+// Global random number generator
+std::random_device rd;
+std::mt19937 gen(rd());
+std::uniform_int_distribution<> dis(0, 1);
 
 // Global Variables Area
 
-
-int iSandSize = 15;
+int iSandSize = 12;
 int iSandSummonSize = 3;
 int iSandSummonX = 0, iSandSummonY = 0;
 
+bool isHoldingLeftMouse = false, isHoldingRightMouse = false;
+
 Uint64 iLastUpdate = 0; // Last Update Time
-Uint64 iUpdateInterval = 100; // Frame update interval
+Uint64 iUpdateInterval = 30; // Frame update interval
 
 struct Pos {
     int x,
@@ -38,7 +45,7 @@ struct {
     int h = iWindowHeight;
 } windowSize;
 
-vector<vector<int>> vSandMap(floor(iWindowWidth / iSandSize), vector<int>(floor(iWindowHeight / iSandSize), 0));
+vector<vector<int>> vSandMap(floor(iWindowWidth / iSandSize), vector<int>(floor((iWindowHeight - 60) / iSandSize), 0));
 
 /*
 Sand Identification
@@ -59,7 +66,7 @@ static int resizingEventWatcher(void* data, const SDL_Event* event) {
                 windowSize.w = event->window.data1;
                 windowSize.h = event->window.data2;
                 const int iNewWidth = floor(windowSize.w / iSandSize);
-                const int iNewHeight = floor(windowSize.h / iSandSize);
+                const int iNewHeight = floor((windowSize.h - 60) / iSandSize);
 
                 vSandMap.resize(iNewWidth);
                 for (auto& row : vSandMap) {
@@ -132,10 +139,8 @@ void gridDrawer(SDL_Renderer* renderer, const vector<vector<int>>& vSandMap) {
 
 
 void simulateSandFalling(SDL_Renderer* renderer) {
-    Uint64 iCurrentTime = SDL_GetTicks();
-    if (iCurrentTime - iLastUpdate > iUpdateInterval) {
+    if (const Uint64 iCurrentTime = SDL_GetTicks(); iCurrentTime - iLastUpdate > iUpdateInterval) {
         iLastUpdate = iCurrentTime;
-        cerr << "Update " << iCurrentTime << endl;
         for (int i = 0; i < vSandMap[0].size(); i++) {
             for (int j = 0; j < vSandMap.size(); j++) {
                 if (vSandMap[j][i] == 1) {
@@ -146,11 +151,15 @@ void simulateSandFalling(SDL_Renderer* renderer) {
                         }
                         else {
                             bool isLeftAvailable = false;
-                            if (vSandMap[j - 1][i - 1] != 1) {
+                            if (j - 1 < 0) {
+                                vSandMap[j][i] = 0;
+                            } else if (vSandMap[j - 1][i - 1] != 1) {
                                 isLeftAvailable = true;
                             }
-                            if (vSandMap[j + 1][i - 1] != 1) {
-                                if (isLeftAvailable && rand() % 2 == 1) {
+                            if (j + 1 >= vSandMap.size()) {
+                                vSandMap[j][i] = 0;
+                            } else if (vSandMap[j + 1][i - 1] != 1) {
+                                if (isLeftAvailable && dis(gen) == 1) {
                                     vSandMap[j][i] = 0;
                                     vSandMap[j - 1][i - 1] = 1;
                                 } else {
@@ -176,6 +185,15 @@ HuyN_(int argc, char* argv[]) {
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         throw SDLException("Failed to initialize SDL");
+    }
+
+    if (TTF_Init() == -1) {
+        throw SDLException("Couldn't initialize TTF");
+    }
+
+    TTF_Font * font = TTF_OpenFont("./TTF/OpenSans.ttf", 10);
+    if (font == nullptr) {
+        throw SDLException("Couldn't create font.");
     }
 
     SDL_Window *window{
@@ -205,13 +223,38 @@ HuyN_(int argc, char* argv[]) {
         SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
         SDL_RenderClear(renderer);
 
+
+
+        string sInformation{};
+        // string sInformation{"Sand summoner size: " + to_string(iSandSummonSize) + "\n"};                                           // Size information
+        // sInformation += "Frame update interval ( the lower the faster sand fall ): " + to_string(iUpdateInterval) + "ms \n";   // Speed information
+        //        sInformation += "Help: Scroll down to decrease sand summoner size, up to increase | Press '+' to increase speed and '-' of sand falling.";
+
+        constexpr SDL_Color White = {0xFF, 0xFF, 0xFF, 0xFF};
+
+        SDL_Surface* surfaceInformation{TTF_RenderText_Solid(font, sInformation.c_str(), White)};
+
+        SDL_Texture* Information = SDL_CreateTextureFromSurface(renderer, surfaceInformation);
+
+        SDL_Rect informationRect{5, 5, iWindowWidth - 10, 55};
+
+        SDL_RenderCopy(renderer, Information, nullptr, &informationRect);
+
         while (SDL_PollEvent(&event)) {
             switch (event.type){
                 case SDL_MOUSEBUTTONDOWN:
                     if (event.button.button == SDL_BUTTON_LEFT) {
                         drawSand(renderer);
+                        isHoldingLeftMouse = true;
                     } else {
-                        // TODO: Handle Right Click To Be Able To Remove Sand
+                        isHoldingRightMouse = true;
+                    }
+                    break;
+                case SDL_MOUSEBUTTONUP:
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        isHoldingLeftMouse = false;
+                    } else {
+                        isHoldingRightMouse = false;
                     }
                     break;
                 case SDL_MOUSEWHEEL:
@@ -248,11 +291,20 @@ HuyN_(int argc, char* argv[]) {
                 default:
                     break;
             }
+            if (isHoldingLeftMouse) {
+                drawSand(renderer);
+            } else if (isHoldingRightMouse) {
+                // TODO: Handle Holding Right Click To Be Able To Remove Sand
+            }
         }
 
         simulateSandFalling(renderer);
 
         SDL_RenderPresent(renderer);
+        //
+        // SDL_FreeSurface(surfaceInformation);
+        // SDL_DestroyTexture(Information);
+
     }
 
     return EXIT_SUCCESS;
