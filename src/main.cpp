@@ -4,7 +4,6 @@
 #include <queue>
 #include <random>
 #include <SDL.h>
-#include <SDL_ttf.h>
 
 #define HuyN_ int main
 #define iWindowWidth 1280
@@ -45,7 +44,12 @@ struct {
     int h = iWindowHeight;
 } windowSize;
 
-vector<vector<int>> vSandMap(floor(iWindowWidth / iSandSize), vector<int>(floor((iWindowHeight - 60) / iSandSize), 0));
+struct SandProperties {
+    int iSandType = 0;
+    bool isHover = false;
+};
+
+vector<vector<SandProperties>> vSandMap(floor(iWindowWidth / iSandSize), vector<SandProperties>(floor((iWindowHeight - 60) / iSandSize)));
 
 /*
 Sand Identification
@@ -70,7 +74,7 @@ static int resizingEventWatcher(void* data, const SDL_Event* event) {
 
                 vSandMap.resize(iNewWidth);
                 for (auto& row : vSandMap) {
-                    row.resize(iNewHeight, 0);
+                    row.resize(iNewHeight, {0, false});
                 }
             }
         }
@@ -82,7 +86,7 @@ void setSandSummoner(SDL_Renderer* renderer, queue<Pos> *qSummonerPosRemove) {
     while (!qSummonerPosRemove->empty()) {
         const auto [x, y] = qSummonerPosRemove->front();
         qSummonerPosRemove->pop();
-        vSandMap[x][y] = vSandMap[x][y] != 1 ? 0 : vSandMap[x][y];
+        vSandMap[x][y].isHover = false;
     }
 
     const int iKeyBoxX = floor(iSandSummonX / iSandSize),
@@ -90,9 +94,10 @@ void setSandSummoner(SDL_Renderer* renderer, queue<Pos> *qSummonerPosRemove) {
 
     for (int i = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); i <= floor(iSandSummonSize / 2); i++) {
         for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
-            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && (vSandMap[iKeyBoxX + i][iKeyBoxY + j] != 1 || isHoldingRightMouse)) {
-                vSandMap[iKeyBoxX + i][iKeyBoxY + j] = 2;
+            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size()) {
+                vSandMap[iKeyBoxX + i][iKeyBoxY + j].isHover = true;
                 qSummonerPosRemove->push({iKeyBoxX + i, iKeyBoxY + j});
+                if (isHoldingRightMouse) vSandMap[iKeyBoxX + i][iKeyBoxY + j].iSandType = 0;
             }
         }
     }
@@ -105,8 +110,8 @@ void drawSand(SDL_Renderer* renderer) {
 
     for (int i = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); i <= floor(iSandSummonSize / 2); i++) {
         for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
-            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j] != 1) {
-                vSandMap[iKeyBoxX + i][iKeyBoxY + j] = 1;
+            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j].iSandType != 1) {
+                vSandMap[iKeyBoxX + i][iKeyBoxY + j].iSandType = 1;
             }
         }
     }
@@ -118,33 +123,42 @@ void eraseSand(SDL_Renderer* renderer) {
 
     for (int i = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); i <= floor(iSandSummonSize / 2); i++) {
         for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
-            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j] == 1) {
-                vSandMap[iKeyBoxX + i][iKeyBoxY + j] = 0;
+            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j].iSandType == 1) {
+                vSandMap[iKeyBoxX + i][iKeyBoxY + j].iSandType = 0;
             }
         }
     }
 }
 
 
-void gridDrawer(SDL_Renderer* renderer, const vector<vector<int>>& vSandMap) {
+void gridDrawer(SDL_Renderer* renderer, const vector<vector<SandProperties>>& vSandMap) {
     for (int i = 0; i < vSandMap.size(); i++) {
         for (int j = 0; j < vSandMap[i].size(); j++) {
             const SDL_Rect gridRect{i * iSandSize, windowSize.h - (j + 1) * iSandSize, iSandSize, iSandSize};
-            if (vSandMap[i][j] == 1) {
-                SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-                SDL_RenderFillRect(renderer, &gridRect);
-                SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0x00, 0xFF);
-                SDL_RenderDrawRect(renderer, &gridRect);
-            }
-            else if (vSandMap[i][j] == 2) {
-                SDL_SetRenderDrawColor(renderer, 0x8C, 0x8C, 0x8C, 0xFF);
-                SDL_RenderFillRect(renderer, &gridRect);
-                SDL_SetRenderDrawColor(renderer, 0x7C, 0x7C, 0x7C, 0xFF);
-                SDL_RenderDrawRect(renderer, &gridRect);
+
+            if (vSandMap[i][j].iSandType == 1) {
+                if (vSandMap[i][j].isHover == true) {
+                    SDL_SetRenderDrawColor(renderer, 0xFF, 0xF3, 0xA1, 0xFF);
+                    SDL_RenderFillRect(renderer, &gridRect);
+                    SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0x00, 0xFF);
+                    SDL_RenderDrawRect(renderer, &gridRect);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0xFF, 0xF3, 0xA1, 0xFF);
+                    SDL_RenderFillRect(renderer, &gridRect);
+                    SDL_SetRenderDrawColor(renderer, 0xFF, 0xE8, 0x66, 0xFF);
+                    SDL_RenderDrawRect(renderer, &gridRect);
+                }
             }
             else {
-                SDL_SetRenderDrawColor(renderer, 0x3C, 0x3C, 0x3C, 0xFF);
-                SDL_RenderDrawRect(renderer, &gridRect);
+                if (vSandMap[i][j].isHover == true) {
+                    SDL_SetRenderDrawColor(renderer, 0x8C, 0x8C, 0x8C, 0xFF);
+                    SDL_RenderFillRect(renderer, &gridRect);
+                    SDL_SetRenderDrawColor(renderer, 0x7C, 0x7C, 0x7C, 0xFF);
+                    SDL_RenderDrawRect(renderer, &gridRect);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0x3C, 0x3C, 0x3C, 0xFF);
+                    SDL_RenderDrawRect(renderer, &gridRect);
+                }
             }
         }
     }
@@ -156,32 +170,28 @@ void simulateSandFalling(SDL_Renderer* renderer) {
         iLastUpdate = iCurrentTime;
         for (int i = 0; i < vSandMap[0].size(); i++) {
             for (int j = 0; j < vSandMap.size(); j++) {
-                if (vSandMap[j][i] == 1) {
+                if (vSandMap[j][i].iSandType == 1) {
                     if (i - 1 >= 0) {
-                        if (vSandMap[j][i - 1] != 1){
-                            vSandMap[j][i] = 0;
-                            vSandMap[j][i - 1] = 1;
+                        if (vSandMap[j][i - 1].iSandType != 1){
+                            vSandMap[j][i].iSandType = 0;
+                            vSandMap[j][i - 1].iSandType = 1;
                         }
                         else {
                             bool isLeftAvailable = false;
-                            if (j - 1 < 0) {
-                                vSandMap[j][i] = 0;
-                            } else if (vSandMap[j - 1][i - 1] != 1) {
+                            if (j - 1 >= 0 && vSandMap[j - 1][i - 1].iSandType != 1) {
                                 isLeftAvailable = true;
                             }
-                            if (j + 1 >= vSandMap.size()) {
-                                vSandMap[j][i] = 0;
-                            } else if (vSandMap[j + 1][i - 1] != 1) {
+                            if (j + 1 < vSandMap.size() && vSandMap[j + 1][i - 1].iSandType != 1) {
                                 if (isLeftAvailable && dis(gen) == 1) {
-                                    vSandMap[j][i] = 0;
-                                    vSandMap[j - 1][i - 1] = 1;
+                                    vSandMap[j][i].iSandType = 0;
+                                    vSandMap[j - 1][i - 1].iSandType = 1;
                                 } else {
-                                    vSandMap[j][i] = 0;
-                                    vSandMap[j + 1][i - 1] = 1;
+                                    vSandMap[j][i].iSandType = 0;
+                                    vSandMap[j + 1][i - 1].iSandType = 1;
                                 }
                             } else if (isLeftAvailable) {
-                                vSandMap[j][i] = 0;
-                                vSandMap[j - 1][i - 1] = 1;
+                                vSandMap[j][i].iSandType = 0;
+                                vSandMap[j - 1][i - 1].iSandType = 1;
                             }
                         }
                     }
@@ -198,15 +208,6 @@ HuyN_(int argc, char* argv[]) {
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         throw SDLException("Failed to initialize SDL");
-    }
-
-    if (TTF_Init() == -1) {
-        throw SDLException("Couldn't initialize TTF");
-    }
-
-    TTF_Font * font = TTF_OpenFont("./TTF/OpenSans.ttf", 10);
-    if (font == nullptr) {
-        throw SDLException("Couldn't create font.");
     }
 
     SDL_Window *window{
@@ -231,27 +232,21 @@ HuyN_(int argc, char* argv[]) {
     SDL_Event event;
     bool isRunning{true};
 
+
+    const string sGuild{"Guild: Scroll down to decrease sand summoner size, up to increase | Press '+' to increase speed and '-' of sand falling. \nThis Simulator Was Created by HuyN... Appreciate my works pls..."};
+
+
+    constexpr SDL_MessageBoxButtonData messageBoxButton{SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Understood."};
+
+    const SDL_MessageBoxData messageBoxData{SDL_MESSAGEBOX_INFORMATION, window, "Guild to use the simulator.", sGuild.c_str(), 1, &messageBoxButton, nullptr};
+
+    SDL_ShowMessageBox(&messageBoxData, nullptr);
+
+
     while (isRunning) {
 
         SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
         SDL_RenderClear(renderer);
-
-
-
-        string sInformation{};
-        // string sInformation{"Sand summoner size: " + to_string(iSandSummonSize) + "\n"};                                           // Size information
-        // sInformation += "Frame update interval ( the lower the faster sand fall ): " + to_string(iUpdateInterval) + "ms \n";   // Speed information
-        //        sInformation += "Help: Scroll down to decrease sand summoner size, up to increase | Press '+' to increase speed and '-' of sand falling.";
-
-        constexpr SDL_Color White = {0xFF, 0xFF, 0xFF, 0xFF};
-
-        SDL_Surface* surfaceInformation{TTF_RenderText_Solid(font, sInformation.c_str(), White)};
-
-        SDL_Texture* Information = SDL_CreateTextureFromSurface(renderer, surfaceInformation);
-
-        SDL_Rect informationRect{5, 5, iWindowWidth - 10, 55};
-
-        SDL_RenderCopy(renderer, Information, nullptr, &informationRect);
 
         while (SDL_PollEvent(&event)) {
             switch (event.type){
@@ -307,8 +302,6 @@ HuyN_(int argc, char* argv[]) {
             }
             if (isHoldingLeftMouse) {
                 drawSand(renderer);
-            } else if (isHoldingRightMouse) {
-                // TODO: Handle Holding Right Click To Be Able To Remove Sand
             }
         }
 
