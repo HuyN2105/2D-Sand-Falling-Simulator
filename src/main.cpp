@@ -25,14 +25,14 @@ std::uniform_int_distribution<> dis(0, 1);
 
 // Global Variables Area
 
-int iSandSize = 12;
+int iSandSize = 8;
 int iSandSummonSize = 3;
 int iSandSummonX = 0, iSandSummonY = 0;
 
 bool isHoldingLeftMouse = false, isHoldingRightMouse = false;
 
 Uint64 iLastUpdate = 0; // Last Update Time
-Uint64 iUpdateInterval = 30; // Frame update interval
+Uint64 iUpdateInterval = 15; // Frame update interval
 
 struct Pos {
     int x,
@@ -44,23 +44,63 @@ struct {
     int h = iWindowHeight;
 } windowSize;
 
+class PVector {
+public:
+    float x;
+    float y;
+
+    PVector() : x(0), y(0) {}
+
+    PVector (const float x_, const float y_) : x(x_), y(y_) {}
+
+    void add(const PVector v) {
+        cout << "Before add: " << x << " " << y << endl;
+        x = x + v.x;
+        y = y + v.y;
+        cout << "After add: " << x << " " << y << endl;
+    }
+
+    void distribute(const PVector v) {
+        x = x - v.x;
+        y = y - v.y;
+    }
+};
+
+PVector GravitationalForce{0, 9.8};
+
 struct SandProperties {
     int iSandType = 0;
     bool isHover = false;
+    SDL_Color Color{};
 };
 
+SDL_Color LastColor{0xFF, 0, 0, 0xFF};
+
 vector<vector<SandProperties>> vSandMap(floor(iWindowWidth / iSandSize), vector<SandProperties>(floor((iWindowHeight - 60) / iSandSize)));
+
+vector<vector<PVector>> vSandForce(floor(iWindowWidth / iSandSize), vector<PVector>(floor((iWindowHeight - 60) / iSandSize)));
 
 /*
 Sand Identification
     #id     #Name           #Reason
     0       Empty           Empty box
-    1       Falling-Sand    Sand is in midair
+    1       Sand            is Sand
     2       Sand-Summoner   Following cursor
 */
 
-
 // Functions Area
+
+
+// TODO: Implementing gravitation pull with forces & further expansion with outer forces ( wind,... )
+
+
+void VectorInit() {
+    for (int i = 0; i < vSandMap.size(); i++) {
+        for (int j = 0; j < vSandMap[i].size(); j++) {
+            vSandForce[i][j] = {0, 0};
+        }
+    }
+}
 
 
 static int resizingEventWatcher(void* data, const SDL_Event* event) {
@@ -110,8 +150,32 @@ void drawSand(SDL_Renderer* renderer) {
 
     for (int i = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); i <= floor(iSandSummonSize / 2); i++) {
         for (int j = static_cast<int>(-1 * ceil(iSandSummonSize / 2)); j <= floor(iSandSummonSize / 2); j++) {
-            if (iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size() && vSandMap[iKeyBoxX + i][iKeyBoxY + j].iSandType != 1) {
+            if (vSandMap[iKeyBoxX + i][iKeyBoxY + j].iSandType != 1 && iKeyBoxX + i >= 0 && iKeyBoxX + i < vSandMap.size() && iKeyBoxY + j >= 0 && iKeyBoxY + j < vSandMap.at(iKeyBoxX + i).size()) {
                 vSandMap[iKeyBoxX + i][iKeyBoxY + j].iSandType = 1;
+                if (LastColor.r == 0xFF) {
+                    if (LastColor.g == 0 && LastColor.b > 0) {
+                        LastColor.b -= 0x1;
+                    } else if (LastColor.g < 0xFF && LastColor.b == 0) {
+                        LastColor.g += 0x1;
+                    }
+                }
+                if (LastColor.g == 0xFF) {
+                    if (LastColor.r > 0 && LastColor.b == 0) {
+                        LastColor.r -= 0x1;
+                    } else if (LastColor.r == 0 && LastColor.b < 0xFF) {
+                        LastColor.b += 0x1;
+                    }
+                }
+                if (LastColor.b == 0xFF) {
+                    if (LastColor.r == 0 && LastColor.g > 0) {
+                        LastColor.g -= 0x1;
+                    } else if (LastColor.r < 0xFF && LastColor.g == 0) {
+                        LastColor.r += 0x1;
+                    }
+                }
+
+                vSandMap[iKeyBoxX + i][iKeyBoxY + j].Color = LastColor;
+                vSandForce[iKeyBoxX + i][iKeyBoxY + j] = GravitationalForce;
             }
         }
     }
@@ -138,18 +202,15 @@ void gridDrawer(SDL_Renderer* renderer, const vector<vector<SandProperties>>& vS
 
             if (vSandMap[i][j].iSandType == 1) {
                 if (vSandMap[i][j].isHover == true) {
-                    SDL_SetRenderDrawColor(renderer, 0xFF, 0xF3, 0xA1, 0xFF);
+                    SDL_SetRenderDrawColor(renderer, vSandMap[i][j].Color.r - 0x10, vSandMap[i][j].Color.g - 0x10, vSandMap[i][j].Color.b - 0x10, 0xFF);
                     SDL_RenderFillRect(renderer, &gridRect);
                     SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0x00, 0xFF);
                     SDL_RenderDrawRect(renderer, &gridRect);
                 } else {
-                    SDL_SetRenderDrawColor(renderer, 0xFF, 0xF3, 0xA1, 0xFF);
+                    SDL_SetRenderDrawColor(renderer, vSandMap[i][j].Color.r, vSandMap[i][j].Color.g, vSandMap[i][j].Color.b, 0xFF);
                     SDL_RenderFillRect(renderer, &gridRect);
-                    SDL_SetRenderDrawColor(renderer, 0xFF, 0xE8, 0x66, 0xFF);
-                    SDL_RenderDrawRect(renderer, &gridRect);
                 }
-            }
-            else {
+            } else {
                 if (vSandMap[i][j].isHover == true) {
                     SDL_SetRenderDrawColor(renderer, 0x8C, 0x8C, 0x8C, 0xFF);
                     SDL_RenderFillRect(renderer, &gridRect);
@@ -164,6 +225,7 @@ void gridDrawer(SDL_Renderer* renderer, const vector<vector<SandProperties>>& vS
     }
 }
 
+// TODO: Algorithm changes: run from the middle to both sides instead of left to right
 
 void simulateSandFalling(SDL_Renderer* renderer) {
     if (const Uint64 iCurrentTime = SDL_GetTicks(); iCurrentTime - iLastUpdate > iUpdateInterval && !isHoldingRightMouse) {
@@ -175,6 +237,7 @@ void simulateSandFalling(SDL_Renderer* renderer) {
                         if (vSandMap[j][i - 1].iSandType != 1){
                             vSandMap[j][i].iSandType = 0;
                             vSandMap[j][i - 1].iSandType = 1;
+                            vSandMap[j][i - 1].Color = vSandMap[j][i].Color;
                         }
                         else {
                             bool isLeftAvailable = false;
@@ -185,13 +248,16 @@ void simulateSandFalling(SDL_Renderer* renderer) {
                                 if (isLeftAvailable && dis(gen) == 1) {
                                     vSandMap[j][i].iSandType = 0;
                                     vSandMap[j - 1][i - 1].iSandType = 1;
+                                    vSandMap[j - 1][i - 1].Color = vSandMap[j][i].Color;
                                 } else {
                                     vSandMap[j][i].iSandType = 0;
                                     vSandMap[j + 1][i - 1].iSandType = 1;
+                                    vSandMap[j + 1][i - 1].Color = vSandMap[j][i].Color;
                                 }
                             } else if (isLeftAvailable) {
                                 vSandMap[j][i].iSandType = 0;
                                 vSandMap[j - 1][i - 1].iSandType = 1;
+                                vSandMap[j - 1][i - 1].Color = vSandMap[j][i].Color;
                             }
                         }
                     }
@@ -229,18 +295,20 @@ HuyN_(int argc, char* argv[]) {
 
     SDL_AddEventWatch(reinterpret_cast<SDL_EventFilter>(resizingEventWatcher), window);
 
+    VectorInit();
+
     SDL_Event event;
     bool isRunning{true};
 
-
-    const string sGuild{"Guild: Scroll down to decrease sand summoner size, up to increase | Press '+' to increase speed and '-' of sand falling. \nThis Simulator Was Created by HuyN... Appreciate my works pls..."};
-
-
-    constexpr SDL_MessageBoxButtonData messageBoxButton{SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Understood."};
-
-    const SDL_MessageBoxData messageBoxData{SDL_MESSAGEBOX_INFORMATION, window, "Guild to use the simulator.", sGuild.c_str(), 1, &messageBoxButton, nullptr};
-
-    SDL_ShowMessageBox(&messageBoxData, nullptr);
+    // TODO: Remove this commented section of code when completed
+    // const string sGuild{"Guild: Scroll down to decrease sand summoner size, up to increase | Press '+' to increase speed and '-' of sand falling. \nThis Simulator Was Created by HuyN... Appreciate my works pls..."};
+    //
+    //
+    // constexpr SDL_MessageBoxButtonData messageBoxButton{SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Understood."};
+    //
+    // const SDL_MessageBoxData messageBoxData{SDL_MESSAGEBOX_INFORMATION, window, "Guild to use the simulator.", sGuild.c_str(), 1, &messageBoxButton, nullptr};
+    //
+    // SDL_ShowMessageBox(&messageBoxData, nullptr);
 
 
     while (isRunning) {
@@ -308,10 +376,6 @@ HuyN_(int argc, char* argv[]) {
         simulateSandFalling(renderer);
 
         SDL_RenderPresent(renderer);
-        //
-        // SDL_FreeSurface(surfaceInformation);
-        // SDL_DestroyTexture(Information);
-
     }
 
     return EXIT_SUCCESS;
