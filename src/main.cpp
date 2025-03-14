@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <memory>
 #include <queue>
 #include <random>
 #include <SDL.h>
@@ -9,7 +10,7 @@
 #define iWindowWidth 1280
 #define iWindowHeight 720
 
-using std::string, std::cout, std::cerr, std::endl, std::vector, std::floor, std::ceil, std::abs, std::queue, std::rand, std::to_string;
+using std::string, std::cout, std::cerr, std::endl, std::vector, std::floor, std::ceil, std::abs, std::queue, std::rand, std::to_string, std::unique_ptr;
 
 class SDLException final : public std::runtime_error {
 public:
@@ -46,24 +47,72 @@ struct {
 
 class PVector {
 public:
-    float x;
-    float y;
+    double x;
+    double y;
 
-    PVector() : x(0), y(0) {}
+    PVector() : x(0), y(0) {};
 
-    PVector (const float x_, const float y_) : x(x_), y(y_) {}
+    PVector(const double x_, const double y_) : x(x_), y(y_) {};
 
     void add(const PVector v) {
-        cout << "Before add: " << x << " " << y << endl;
         x = x + v.x;
         y = y + v.y;
-        cout << "After add: " << x << " " << y << endl;
     }
 
     void distribute(const PVector v) {
         x = x - v.x;
         y = y - v.y;
     }
+
+    [[nodiscard]] PVector rotate(const double deg) const {
+        return PVector({x + deg, y + deg});
+    }
+
+    [[nodiscard]] PVector mult(const double lhs) const {
+        return PVector({x * lhs, y * lhs});
+    }
+
+    [[nodiscard]] PVector div(const double lhs) const {
+        return PVector({x / lhs, y / lhs});
+    }
+
+    [[nodiscard]] double mag() const {
+        return sqrt(pow(x, 2) + pow(y, 2));
+    }
+
+    [[nodiscard]] PVector normalize() const {
+        return div(mag() == 0 ? 1 : mag());
+    }
+
+    [[nodiscard]] PVector plus(const PVector v) const {
+        return PVector{x + v.x, y + v.y};
+    }
+
+    [[nodiscard]] PVector sub(const PVector v) const {
+        return PVector{x - v.x, y - v.y};
+    }
+
+    [[nodiscard]] double dot(const PVector v) const {
+        return x * v.x + y * v.y;
+    }
+
+    [[nodiscard]] double dist(const PVector v) const {
+        return sqrt(pow(x - v.x, 2) + pow(y - v.y, 2));
+    }
+
+    [[nodiscard]] double angleBetween(const PVector v) const {
+        return acos(this->dot(v) / (this->mag() * v.mag()));
+    }
+
+    void random2D(const int start = 50, const int end = 100) {
+        x = rand() % (end - start) + start;
+        y = rand() % (end - start) + start;
+    }
+
+};
+
+PVector operator*(const double lhs, const PVector & sub) {
+    return PVector{sub.x * lhs, sub.y * lhs};
 };
 
 PVector GravitationalForce{0, 9.8};
@@ -78,7 +127,7 @@ SDL_Color LastColor{0xFF, 0, 0, 0xFF};
 
 vector<vector<SandProperties>> vSandMap(floor(iWindowWidth / iSandSize), vector<SandProperties>(floor((iWindowHeight - 60) / iSandSize)));
 
-vector<vector<PVector>> vSandForce(floor(iWindowWidth / iSandSize), vector<PVector>(floor((iWindowHeight - 60) / iSandSize)));
+vector<vector<PVector>> vSandForce(floor(iWindowWidth / iSandSize), vector<PVector>(floor((iWindowHeight - 60) / iSandSize), {0, 0}));
 
 /*
 Sand Identification
@@ -93,16 +142,6 @@ Sand Identification
 
 // TODO: Implementing gravitation pull with forces & further expansion with outer forces ( wind,... )
 
-
-void VectorInit() {
-    for (int i = 0; i < vSandMap.size(); i++) {
-        for (int j = 0; j < vSandMap[i].size(); j++) {
-            vSandForce[i][j] = {0, 0};
-        }
-    }
-}
-
-
 static int resizingEventWatcher(void* data, const SDL_Event* event) {
     if (event->type == SDL_WINDOWEVENT &&
         event->window.event == SDL_WINDOWEVENT_RESIZED) {
@@ -113,8 +152,10 @@ static int resizingEventWatcher(void* data, const SDL_Event* event) {
                 const int iNewHeight = floor((windowSize.h - 60) / iSandSize);
 
                 vSandMap.resize(iNewWidth);
-                for (auto& row : vSandMap) {
-                    row.resize(iNewHeight, {0, false});
+                vSandForce.resize(iNewWidth);
+                for (int i = 0; i < iNewWidth; i++) {
+                    vSandMap[i].resize(iNewHeight, {0, false});
+                    vSandForce[i].resize(iNewHeight, {0, 0});
                 }
             }
         }
@@ -294,8 +335,6 @@ HuyN_(int argc, char* argv[]) {
     SDL_ShowWindow(window);
 
     SDL_AddEventWatch(reinterpret_cast<SDL_EventFilter>(resizingEventWatcher), window);
-
-    VectorInit();
 
     SDL_Event event;
     bool isRunning{true};
